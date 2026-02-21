@@ -1,0 +1,47 @@
+# ------------------------
+# Python
+# ------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.env/
+.venv/
+
+# Environment Variables
+.env
+.env.*
+
+# Logs
+*.log
+
+# SQLite / Local DB files (if used)
+*.db
+*.sqlite3
+
+# Chroma DB (if using local storage)
+chroma/
+chromadb/
+*.parquet
+
+# IDE
+.vscode/
+.idea/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Pytest
+.pytest_cache/
+
+# Build files
+build/
+dist/
+*.egg-info/
+
+# Coverage
+.coverage
+htmlcov/
