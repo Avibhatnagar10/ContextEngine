@@ -45,3 +45,5 @@ dist/
 # Coverage
 .coverage
 htmlcov/
+
+data/

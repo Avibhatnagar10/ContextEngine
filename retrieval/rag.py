@@ -4,7 +4,7 @@ from retrieval.query import query_similar
 def generate_rag_answer(question: str):
 
     # 1️⃣ Retrieve top relevant chunks
-    results = query_similar(question, n_results=3)
+    results = query_similar(question, n_results=5)
 
     documents = results.get("documents", [[]])[0]
 
