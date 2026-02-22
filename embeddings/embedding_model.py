@@ -1,6 +1,8 @@
-from sentence_transformers import SentenceTransformer
-
-model = SentenceTransformer("all-MiniLM-L6-v2")
+import ollama
 
 def generate_embedding(text: str):
-    return model.encode(text).tolist()
+    response = ollama.embeddings(
+        model="nomic-embed-text",
+        prompt=text
+    )
+    return response["embedding"]

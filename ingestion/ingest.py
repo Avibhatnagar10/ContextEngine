@@ -1,18 +1,36 @@
 import chromadb
-from chromadb.config import Settings
 from embeddings.embedding_model import generate_embedding
+from ingestion.chunker import chunk_text
 
-client = chromadb.HttpClient(host="localhost", port=8000)
+client = chromadb.PersistentClient(path="./data")
+client.delete_collection("documents")
 
 collection = client.get_or_create_collection(
     name="documents"
 )
 
 def ingest_document(doc_id: str, text: str):
-    embedding = generate_embedding(text)
+    chunks = chunk_text(text)
+
+    ids = []
+    documents = []
+    embeddings = []
+    metadatas = []
+
+    for i, chunk in enumerate(chunks):
+        chunk_id = f"{doc_id}_chunk_{i}"
+        embedding = generate_embedding(chunk)
+
+        ids.append(chunk_id)
+        documents.append(chunk)
+        embeddings.append(embedding)
+        metadatas.append({"source": doc_id})
 
     collection.add(
-        ids=[doc_id],
-        documents=[text],
-        embeddings=[embedding]
+        ids=ids,
+        documents=documents,
+        embeddings=embeddings,
+        metadatas=metadatas
     )
+
+    return {"status": "stored", "chunks": len(chunks)}
