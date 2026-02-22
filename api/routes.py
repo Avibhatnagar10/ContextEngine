@@ -4,16 +4,19 @@ from retrieval.query import query_similar
 from retrieval.rag import generate_rag_answer
 import os
 import shutil
+from pydantic import BaseModel
 
 router = APIRouter()
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
+class IngestRequest(BaseModel):
+    id: str
+    text: str
 @router.post("/ingest")
-def ingest(id: str, text: str):
-    return ingest_document(id, text)
+def ingest(data: IngestRequest):
+    return ingest_document(data.id, data.text)
 
 
 @router.get("/query")
