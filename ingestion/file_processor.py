@@ -1,5 +1,5 @@
 import pdfplumber
-
+import re
 
 def extract_text_from_pdf(file_path: str):
     text = ""
@@ -19,12 +19,16 @@ def extract_text_from_txt(file_path: str):
 
 
 def clean_text(text: str):
-    # Fix weird spacing like: N e x S t r e a m
-    text = text.replace("\n", " ")
-    text = " ".join(text.split())
+    # Normalize Windows line endings
+    text = text.replace("\r\n", "\n")
 
-    # Optional: Fix spaced characters
-    text = text.replace(" .", ".")
-    text = text.replace(" ,", ",")
+    # Remove trailing spaces
+    text = "\n".join(line.strip() for line in text.split("\n"))
 
-    return text
+    # Collapse multiple empty lines into one
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+
+    # Fix spacing around punctuation
+    text = re.sub(r"\s+([.,!?])", r"\1", text)
+
+    return text.strip()

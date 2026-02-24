@@ -1,3 +1,4 @@
+#ContextEngine\ingestion\ingest.py
 import os
 import chromadb
 from embeddings.embedding_model import generate_embedding
@@ -18,6 +19,7 @@ collection = client.get_or_create_collection(
 
 # 🔹 1. Ingest raw text
 def ingest_document(doc_id: str, text: str):
+    collection.delete(where={"source": doc_id})
     chunks = chunk_text(text)
 
     ids = []

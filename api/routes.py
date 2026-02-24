@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from ingestion.ingest import ingest_document, ingest_file
 from ingestion.ingest import collection
 from retrieval.query import query_similar
-from retrieval.rag import generate_rag_answer
+from retrieval.rag import generate_answer
 import os
 import shutil
 import requests
@@ -38,7 +38,7 @@ def query(q: str):
 
 @router.get("/rag")
 def rag(q: str):
-    return generate_rag_answer(q)
+    return generate_answer(q)
 
 
 @router.post("/upload")
