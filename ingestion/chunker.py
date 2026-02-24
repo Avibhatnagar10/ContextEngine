@@ -1,16 +1,10 @@
-def chunk_text(text: str, max_chars=800):
-    paragraphs = text.split("\n")
+def chunk_text(text: str, chunk_size=300, overlap=50):
     chunks = []
-    current_chunk = ""
+    start = 0
 
-    for para in paragraphs:
-        if len(current_chunk) + len(para) < max_chars:
-            current_chunk += para + "\n"
-        else:
-            chunks.append(current_chunk.strip())
-            current_chunk = para + "\n"
-
-    if current_chunk.strip():
-        chunks.append(current_chunk.strip())
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start += chunk_size - overlap
 
     return chunks
