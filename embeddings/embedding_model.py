@@ -1,3 +1,4 @@
+#embeddings_model.py
 import ollama
 
 def generate_embedding(text: str):
