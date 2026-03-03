@@ -4,3 +4,8 @@ fastapi
 uvicorn
 python-dotenv
 pydantic
+psycopg2-binary
+authlib 
+python-jose
+passlib[bcrypt]
+bcrypt
