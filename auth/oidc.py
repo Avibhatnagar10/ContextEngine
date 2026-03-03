@@ -23,7 +23,7 @@ oauth.register(
 # Temporary store (replace with DB later)
 fake_users = {}
 
-FRONTEND_URL = "http://localhost:3000"
+FRONTEND_URL = "https://context-engine-ui.vercel.app"
 ACCESS_COOKIE_NAME = "access_token" 
 REFRESH_COOKIE_NAME = "refresh_token"
 
