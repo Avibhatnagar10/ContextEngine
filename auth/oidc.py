@@ -1,11 +1,16 @@
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import RedirectResponse, JSONResponse
-from uuid import uuid4
-from datetime import datetime
-from .config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-from .jwt_handler import create_access_token
-from .token_store import generate_refresh_token, validate_refresh_token
+from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
+import os
+
+from db.database import get_db
+from db.crud.user_crud import get_user_by_email, create_user
+from db.crud.session_crud import create_session, get_valid_session, delete_session
+
+from .config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, ADMIN_EMAIL
+from .jwt_handler import create_access_token, create_refresh_token
 from .schemas import TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -20,94 +25,173 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
-# Temporary store (replace with DB later)
-fake_users = {}
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-FRONTEND_URL = "https://context-engine-ui.vercel.app"
-ACCESS_COOKIE_NAME = "access_token" 
+ACCESS_COOKIE_NAME = "access_token"
 REFRESH_COOKIE_NAME = "refresh_token"
 
 
-# 🔐 STEP 1 — Redirect to Google
+# -----------------------------
+# STEP 1 — Redirect to Google
+# -----------------------------
 @router.get("/login")
 async def login(request: Request):
+
+    print("\n=== GOOGLE LOGIN START ===")
+
     redirect_uri = request.url_for("auth_callback")
+
+    print("Redirect URI:", redirect_uri)
+
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
-# 🔐 STEP 2 — Callback from Google
+# -----------------------------
+# STEP 2 — OAuth Callback
+# -----------------------------
 @router.get("/callback", name="auth_callback")
-async def auth_callback(request: Request):
+async def auth_callback(request: Request, db: Session = Depends(get_db)):
+
+    print("\n=== GOOGLE CALLBACK ===")
+
     token = await oauth.google.authorize_access_token(request)
 
     user_info = token.get("userinfo")
+
     if not user_info:
         raise HTTPException(status_code=400, detail="Failed to fetch user info")
 
     email = user_info["email"]
+    name = user_info.get("name")
 
-    if email not in fake_users:
-        fake_users[email] = {
-            "id": str(uuid4()),
-            "email": email,
-            "role": "admin",
-            "created_at": datetime.utcnow(),
-        }
+    print("User email:", email)
 
-    user = fake_users[email]
+    # -----------------------------
+    # Get or create user
+    # -----------------------------
+    user = get_user_by_email(db, email)
 
-    access_token = create_access_token({
-        "user_id": user["id"],
-        "email": user["email"],
-        "role": user["role"],
-    })
+    if not user:
 
-    refresh_token = generate_refresh_token(user["id"])
+        role = "admin" if email == ADMIN_EMAIL else "user"
 
-    # 🔥 Redirect to frontend instead of returning JSON
+        print("Creating new user with role:", role)
+
+        user = create_user(
+            db=db,
+            name=name,
+            email=email,
+            password_hash="GOOGLE_AUTH",
+            role=role
+        )
+
+    print("User ID:", user.id)
+
+    # -----------------------------
+    # Create tokens
+    # -----------------------------
+    payload = {
+        "user_id": str(user.id),
+        "email": user.email,
+        "role": user.role
+    }
+
+    access_token = create_access_token(payload)
+    refresh_token = create_refresh_token(payload)
+
+    print("Access + refresh tokens created")
+
+    # -----------------------------
+    # Store refresh token in DB
+    # -----------------------------
+    expires_at = datetime.utcnow() + timedelta(days=7)
+
+    create_session(
+        db=db,
+        user_id=user.id,
+        refresh_token=refresh_token,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+        expires_at=expires_at
+    )
+
+    print("Session stored in DB")
+
+    # -----------------------------
+    # Redirect to dashboard
+    # -----------------------------
     response = RedirectResponse(
         url=f"{FRONTEND_URL}/dashboard"
     )
 
-    response.set_cookie( 
-        key=ACCESS_COOKIE_NAME, 
-        value=access_token,
-        httponly=True,
-        secure=True, # MUST be True in production (HTTPS) 
-        samesite="lax", 
-        max_age=900, # 15 min
-        )
-    response.set_cookie( 
-        key=REFRESH_COOKIE_NAME, 
-        value=refresh_token, 
-        httponly=True, 
-        secure=True, 
-        samesite="lax", 
-        max_age=7 * 24 * 60 * 60, # 7 days 
-        )
+    # ACCESS TOKEN COOKIE
+    response.set_cookie(
+    key=ACCESS_COOKIE_NAME,
+    value=access_token,
+    httponly=True,
+    secure=True,
+    samesite="none",
+    # domain="quiana-sulphuric-overenthusiastically.ngrok-free.dev",
+    max_age=15 * 60,
+    path="/"
+)
+
+    # REFRESH TOKEN COOKIE
+    response.set_cookie(
+    key=REFRESH_COOKIE_NAME,
+    value=refresh_token,
+    httponly=True,
+    secure=True,
+    samesite="none",
+    # domain="quiana-sulphuric-overenthusiastically.ngrok-free.dev",
+    max_age=7 * 24 * 60 * 60,
+    path="/"
+)
+
+    print("Cookies set successfully")
+    print("=== LOGIN COMPLETE ===\n")
 
     return response
 
 
-# 🔄 Refresh Access Token (Rotation)
+# -----------------------------
+# REFRESH TOKEN
+# -----------------------------
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_access_token(request: Request):
-    refresh_cookie = request.cookies.get("refresh_token")
+def refresh_access_token(request: Request, db: Session = Depends(get_db)):
+
+    print("\n=== REFRESH TOKEN ===")
+
+    refresh_cookie = request.cookies.get(REFRESH_COOKIE_NAME)
 
     if not refresh_cookie:
         raise HTTPException(status_code=401, detail="Missing refresh token")
 
-    user_id = validate_refresh_token(refresh_cookie)
+    session = get_valid_session(db, refresh_cookie)
 
-    if not user_id:
+    if not session:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    access_token = create_access_token({
-        "user_id": user_id,
-        "role": "user"
-    })
+    payload = {
+        "user_id": str(session.user_id),
+        "role": session.user.role
+    }
 
-    new_refresh = generate_refresh_token(user_id)
+    access_token = create_access_token(payload)
+    new_refresh = create_refresh_token(payload)
+
+    print("Tokens rotated")
+
+    delete_session(db, refresh_cookie)
+
+    create_session(
+        db=db,
+        user_id=session.user_id,
+        refresh_token=new_refresh,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+        expires_at=datetime.utcnow() + timedelta(days=7)
+    )
 
     response = JSONResponse(
         content={
@@ -117,19 +201,46 @@ def refresh_access_token(request: Request):
     )
 
     response.set_cookie(
-        key="refresh_token",
-        value=new_refresh,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-    )
+    key=REFRESH_COOKIE_NAME,
+    value=new_refresh,
+    httponly=True,
+    secure=True,
+    samesite="none",
+    # domain="quiana-sulphuric-overenthusiastically.ngrok-free.dev",
+    max_age=7 * 24 * 60 * 60,
+    path="/"
+)
 
     return response
 
 
-# 🚪 Logout
+# -----------------------------
+# LOGOUT
+# -----------------------------
 @router.post("/logout")
-def logout():
+def logout(request: Request, db: Session = Depends(get_db)):
+
+    refresh_cookie = request.cookies.get(REFRESH_COOKIE_NAME)
+
+    if refresh_cookie:
+        delete_session(db, refresh_cookie)
+
     response = JSONResponse({"message": "Logged out"})
-    response.delete_cookie("refresh_token")
+
+    response.delete_cookie(
+        ACCESS_COOKIE_NAME,
+        path="/",
+        # domain="quiana-sulphuric-overenthusiastically.ngrok-free.dev",
+        secure=True,
+        samesite="none"
+    )
+
+    response.delete_cookie(
+        REFRESH_COOKIE_NAME,
+        path="/",
+        # domain="quiana-sulphuric-overenthusiastically.ngrok-free.dev",
+        secure=True,
+        samesite="none"
+    )
+
     return response

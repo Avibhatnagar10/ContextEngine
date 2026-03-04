@@ -3,14 +3,13 @@ from auth.oidc import router as auth_router
 from api.routes import router as api_router
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-import os
 
 app = FastAPI()
 
-# 🔐 REQUIRED FOR OIDC (Google Login)
+# 🔐 Required for OAuth state storage
 app.add_middleware(
     SessionMiddleware,
-    secret_key="dev-session-secret-key",  # change in production
+    secret_key="dev-session-secret-key",
 )
 
 app.add_middleware(
@@ -18,6 +17,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://context-engine-ui.vercel.app",
+        "https://quiana-sulphuric-overenthusiastically.ngrok-free.dev"
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -9,3 +9,4 @@ authlib
 python-jose
 passlib[bcrypt]
 bcrypt
+sqlalchemy
